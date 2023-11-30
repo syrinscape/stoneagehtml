@@ -38,7 +38,8 @@ import warnings
 
 # regex: selectors
 regex_selector_id = re.compile(r"((?:\.|#)[\w\-_]+)")
-regex_selector = re.compile(r"(\w+)?(#([\w\-_]+))?(\.([\w\-_]+))?(\*)?")
+regex_selector = re.compile(r"(\w+)?(#([\w\-_]+))?(\.([\w\-_]+))?(\*)?(\[.*\])?")
+regex_selector_attribute = re.compile(r"(\w+)([*^$|~]?=)(.*)")
 
 # regex: compound css-tags
 regex_tags = {
@@ -149,6 +150,35 @@ def tagQuery(tag, tag_name, attrs):
         return False
 
     for key, value in attrs.items():
+        if key == "attribute":
+            match = regex_selector_attribute.match(value)
+            if match:
+                attr_name, operator, attr_value = match.groups()
+                attr_value = attr_value.strip("'\"")  # Remove quotes
+                tag_attr_value = tag.get(attr_name, "")
+                if operator == "*=":
+                    if attr_value not in tag_attr_value:
+                        return False
+                elif operator == "^=":
+                    if not tag_attr_value.startswith(attr_value):
+                        return False
+                elif operator == "$=":
+                    if not tag_attr_value.endswith(attr_value):
+                        return False
+                elif operator == "|=":
+                    if not (
+                        tag_attr_value == attr_value
+                        or tag_attr_value.startswith(attr_value + "-")
+                    ):
+                        return False
+                elif operator == "~=":
+                    if attr_value not in tag_attr_value.split():
+                        return False
+                elif operator == "=":
+                    if tag.get(attr_name) != attr_value:
+                        return False
+            continue
+
         tag_attribute_value = tag.attrs.get(key)
         if not tag_attribute_value:
             return False
@@ -400,11 +430,19 @@ class CompactifyingSoup(BeautifulSoup):
                     if not match.group(0):
                         continue
 
+                    attribute_selector = None
+                    if match.group(7):
+                        attribute_selector = match.group(7)[1:-1]  # Remove the brackets
+
                     selectors.append(
                         (
                             match.group(1),
                             trim_dictionary(
-                                {"class": match.group(5), "id": match.group(3)}
+                                {
+                                    "class": match.group(5),
+                                    "id": match.group(3),
+                                    "attribute": attribute_selector,
+                                }
                             ),
                         )
                     )
